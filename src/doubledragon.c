@@ -182,6 +182,7 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
   int size = gst_buffer_get_size(buf);
 
   int soi = gst_doubledragon_find_soi(dragon, mapped, size);
+    //GST_WARNING_OBJECT(dragon, "\t\t\tdts: %llu, pts: %llu\n", buf->dts, buf->pts);
 
   gst_buffer_unmap(buf, &info);
 
@@ -202,10 +203,10 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
 	  gst_buffer_remove_all_memory(dup);
     gst_buffer_append_memory(dup, dup_mem);
 
-    const GstClockTime diff = 16666666;
-
-    dup->pts = buf->pts > diff ? buf->pts - diff : 0;
+    dup->pts = buf->pts;
     dup->dts = buf->dts;
+
+    buf->pts += 33333333;
 
     gst_pad_push(basetransform->srcpad, dup);
   }
