@@ -18,6 +18,6 @@ We also copy over the GQuark, which contains the allocation information for the 
 The GstBuffer containing the double buffer already points to the first jpeg.
 We add one buffer interval to the timestamp of the buffer with the newest jpeg.
 
-In order to make sure we send the buffers with escending timestamps, we need to make sure that we send the first buffer first.
-We do this by first saving the buffer as a pending buffer and letting the first buffer / double buffer through.
+In order to make sure we send the buffers with ascending timestamps, we need to make sure that we send the first buffer first.
+We do this by first saving the second buffer as a pending buffer and letting the first buffer / double buffer through.
 Then we send the pending buffer immediately when we get a new buffer.
