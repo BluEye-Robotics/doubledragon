@@ -141,14 +141,9 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
   if (GST_CLOCK_TIME_IS_VALID (stream_time))
     gst_object_sync_values (GST_OBJECT (dragon), stream_time);
 
-  //GstMemory* mem = gst_buffer_get_memory(buf, 0);
-  //printf("\t\t\tsize: %zu\n", mem->size);
+  GST_DEBUG_OBJECT(dragon, "dts: %llu, pts: %llu", buf->dts, buf->pts);
 
-  //GstV4l2Memory* mem = gst_mini_object_get_qdata(GST_MINI_OBJECT(buf), g_quark_from_static_string ("GstV4l2Memory"));
-
-  //printf("\t\t\tsize: %zu\n", gst_buffer_get_size(buf));
-  GST_DEBUG_OBJECT(dragon, "\t\t\tdts: %llu, pts: %llu", buf->dts, buf->pts);
-
+  // profile time:
   //static double start = 0;
   //GST_WARNING_OBJECT(dragon, "%f", ms() - start);
   //start = ms();
@@ -177,17 +172,26 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
 
     int soi = gst_doubledragon_find_soi(dragon, mapped, size);
 
+    gst_buffer_unmap(buf, &info);
+
     if (soi)
     {
 	    GST_WARNING_OBJECT(dragon, "Found SOI at %d", soi);
 
+      // save jpg (make sure buffer is mapped)
       //FILE *jpg = fopen("/data/out.jpg", "wb");
       //fwrite(mapped, size, 1, jpg);
       //fclose(jpg);
 
       GstMemory* mem = gst_buffer_get_memory(buf, 0);
 
-      GstMemory * dup_mem = gst_memory_share (mem, soi, size - soi);
+      GstMemory * dup_mem = gst_memory_share(mem, soi, size - soi);
+
+      // In the default v4l2src, we need to copy the quark to avoid a leak.
+      #ifndef DOUBLEDRAGON_IMXV4L2VIDEOSRC
+      GQuark v4l2_mem = gst_mini_object_get_qdata(GST_MINI_OBJECT(mem), g_quark_from_static_string ("GstV4l2Memory"));
+      gst_mini_object_set_qdata(GST_MINI_OBJECT(mem), g_quark_from_static_string ("GstV4l2Memory"), v4l2_mem, (GDestroyNotify) gst_memory_unref);
+      #endif
 
       GstBuffer* dup = gst_buffer_new();
 
@@ -198,24 +202,19 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
       dup->dts = buf->dts;
       dup->duration = buf->duration;
 
-      dragon->pending = dup;
-
       // We need to either subtract the duration from the newest buffer, or add it to the oldest, depending on the gstreamer implementation.
-      // This behaviour is controlled through DOUBLE_DRAGON_SUBTRACT_TS.
-      // To find out which one to choose, compare the timestamps of the double buffer with the one before or after.
-      // If the one before is two durations before the double buffer, then we need to substract one duration from the oldest buffer in the double buffer, and vice versa.
-      #ifdef DOUBLE_DRAGON_SUBTRACT_TS
+      #ifdef DOUBLEDRAGON_IMXV4L2VIDEOSRC
       buf->pts = buf->pts > buf->duration ? buf->pts - buf->duration : 0;
       #else
       dup->pts += buf->duration;
       #endif
+
+      dragon->pending = dup;
     }
     else
     {
 	    GST_WARNING_OBJECT(dragon, "Found no SOI");
     }
-
-    gst_buffer_unmap(buf, &info);
   }
 
   GST_OBJECT_UNLOCK (dragon);
