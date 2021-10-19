@@ -188,6 +188,7 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
       GstMemory * dup_mem = gst_memory_share(mem, soi, size - soi);
 
       // In the default v4l2src, we need to copy the quark to avoid a leak.
+      // This uses the quark defined in https://gitlab.freedesktop.org/gstreamer/gst-plugins-good/-/blob/1.18.4/sys/v4l2/gstv4l2allocator.c#L934
       #ifndef DOUBLEDRAGON_IMXV4L2VIDEOSRC
       GQuark v4l2_mem = gst_mini_object_get_qdata(GST_MINI_OBJECT(mem), g_quark_from_static_string ("GstV4l2Memory"));
       gst_mini_object_set_qdata(GST_MINI_OBJECT(mem), g_quark_from_static_string ("GstV4l2Memory"), v4l2_mem, (GDestroyNotify) gst_memory_unref);
