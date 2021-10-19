@@ -31,8 +31,6 @@ struct _GstDoubledragon
 
   /* < private > */
   GstBuffer * pending;
-
-  GstFlowReturn (*default_generate_output) (GstBaseTransform*, GstBuffer**);
 };
 
 struct _GstDoubledragonClass

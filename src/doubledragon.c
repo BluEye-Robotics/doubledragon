@@ -155,6 +155,14 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
   //GST_WARNING_OBJECT(dragon, "%f", ms() - start);
   //start = ms();
 
+  GST_OBJECT_LOCK (dragon);
+
+  if (dragon->pending)
+  {
+    gst_pad_push(basetransform->srcpad, dragon->pending);
+    dragon->pending = NULL;
+  }
+
   int size = gst_buffer_get_size(buf);
   const int expected_size = gst_doubledragon_expected_size (dragon, size);
   GST_DEBUG_OBJECT(dragon, "\t\t\tsize: %d\texpected_size: %d\n", size, expected_size);
@@ -180,10 +188,8 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
       //fclose(jpg);
 
       GstMemory* mem = gst_buffer_get_memory(buf, 0);
-      //GST_DEBUG_OBJECT(dragon, "\t\t\tis_dmabuf: %d, dma_fd: %i\n", gst_is_dmabuf_memory (mem), gst_dmabuf_memory_get_fd (mem));
-      //GST_WARNING_OBJECT(dragon, "\t\t\tdts: %llu, pts: %llu\n", buf->dts, buf->pts);
-
-      //gst_memory_resize(mem, soi, size - soi);
+      GST_DEBUG_OBJECT(dragon, "\t\t\tis_dmabuf: %d, dma_fd: %i\n", gst_is_dmabuf_memory (mem), gst_dmabuf_memory_get_fd (mem));
+      GST_DEBUG_OBJECT(dragon, "\t\t\tdts: %llu, pts: %llu\n", buf->dts, buf->pts);
 
       GstMemory * dup_mem = gst_memory_share (mem, soi, size - soi);
 
@@ -204,26 +210,10 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
 
     gst_buffer_unmap(buf, &info);
   }
-  return GST_FLOW_OK;
-}
-
-static GstFlowReturn
-gst_doubledragon_generate_output (GstBaseTransform * basetransform, GstBuffer ** outbuf)
-{
-  GstDoubledragon *dragon = GST_DOUBLEDRAGON (basetransform);
-  GST_OBJECT_LOCK (dragon);
-
-  const GstFlowReturn ret = dragon->default_generate_output(basetransform, outbuf);
-
-  if (dragon->pending)
-  {
-    gst_pad_push(basetransform->srcpad, dragon->pending);
-    dragon->pending = NULL;
-  }
 
   GST_OBJECT_UNLOCK (dragon);
 
-  return ret;
+  return GST_FLOW_OK;
 }
 
 static void
@@ -294,10 +284,6 @@ static void
 gst_doubledragon_init (GstDoubledragon * dragon)
 {
   dragon->pending = NULL;
-
-  GstBaseTransformClass *basetransform_class = GST_BASE_TRANSFORM_GET_CLASS(&dragon->basetransform);
-  dragon->default_generate_output = basetransform_class->generate_output;
-  basetransform_class->generate_output = GST_DEBUG_FUNCPTR (gst_doubledragon_generate_output);
 }
 
 static gboolean
