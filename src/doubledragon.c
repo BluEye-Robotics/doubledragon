@@ -3,10 +3,15 @@
  *
  * Doubledragon is a texttransform that uses memory mapping for vpu buffers
  *
+ *  Jpeg frames get delayed when they collide with Iframes. They combine with the next frames and they
+ *  make a jpeg with twice the size of what's usual.
+ *
+ *  Assuming a bitrate of 150 Mb  we get jpegs of about 250 kb and duplicate frames of around 500 kb.
+ *
  * <refsect2>
  * <title>Example launch line</title>
  * |[
-  gst-launch-1.0 -v -e imxv4l2videosrc device=/dev/video1 input=0 fps=30/1 ! mage/jpeg,width=1920,height=1080,framerate=30/1 ! queue max-size-bytes=0 max-size-time=0 max-size-buffers=0 ! imxvpudec !  video/x-raw,format=I420 ! doubledragon title="Hello World" depth=121.45 temperature=-123.4 heading=123.56 tilt=-45 date-format="%y/%m/%d %H:%M:%S" temperature_unit=F depth_unit=Ft tz-offset=60 font-size=25 logo-path=/opt/assets/logos/logo.png ! imxvpuenc_h264 bitrate=14000 ! h264parse  ! mp4mux ! filesink location=/videos/out.mp4
+  gst-launch-1.0 -v -e imxv4l2videosrc device=/dev/video1 input=0 fps=30/1 ! doubledragon ! image/jpeg,width=1920,height=1080,framerate=30/1 ! queue max-size-bytes=0 max-size-time=0 max-size-buffers=0 ! imxvpudec !  video/x-raw,format=I420 ! queue max-size-bytes=0 max-size-time=0 max-size-buffers=0 ! imxvpuenc_h264 bitrate=14000 ! h264parse  ! mp4mux ! filesink location=/videos/out.mp4
  * </refsect2>
  */
 
@@ -31,11 +36,6 @@ inline double ms()
 
 GST_DEBUG_CATEGORY_STATIC(imx_v4l2_buffer_pool_debug);
 #define GST_CAT_DEFAULT imx_v4l2_buffer_pool_debug
-
-enum
-{
-  PROP_0,
-};
 
 #define gst_doubledragon_parent_class parent_class
 G_DEFINE_TYPE (GstDoubledragon, gst_doubledragon, GST_TYPE_BASE_TRANSFORM);
@@ -95,45 +95,33 @@ gst_doubledragon_expected_size (GstDoubledragon * dragon, int size)
 }
 
 static int
-gst_doubledragon_find_soi (GstDoubledragon * dragon, guint8 * mapped, int size)
+gst_doubledragon_find_soi (GstDoubledragon * dragon, const guint8 * mapped, const int size)
 {
-  /*
-    Detection of duplicate frames:
-    Jpeg frames get delayed when they collide with Iframes. They combine with the next frames and they
-    make a jpeg with twice the size of what's usual.
-
-    Assuming a bitrate of 150 Mb  we get jpegs of about 250 kb and duplicate frames of around 500 kb.
-  */
-
-  //static int msinit = 1;
+  // time profiling:
   //static double start;
-  //if (msinit)
-  //{
-  //  start = ms();
-  //  msinit = 0;
-  //}
+  //start = ms();
 
   int soi = 0;
 
-  const int expected_size = gst_doubledragon_expected_size (dragon, size);
-
   GST_DEBUG_OBJECT(dragon, "SOI: %x\t%x\n", mapped[0], mapped[1]);
-	//GST_DEBUG_OBJECT(dragon, "%d\t%f", size, (ms() - start) / 1e3);
-  if ((size > (3*expected_size)/2) && (mapped[0] == 0xff) && (mapped[1] ==0xd8))
+
+  if ((mapped[0] == 0xff) && (mapped[1] == 0xd8)) // sanity check for invalid jpg frames
   {
-	  GST_WARNING_OBJECT(dragon, "duplicate frame with size: %d", size);
-
-    for (int i = (3*expected_size) / 4; i < (3 * expected_size)/2; ++i)
+    for (int i = (5*size)/11; i < (6 * size)/11; ++i) // we search in a limited interval around expected_size
     {
-      char* p = mapped + i;
-
-      if ((p[0] == 0xff) && (p[1] == 0xd8))
+      if ((mapped[i] == 0xff) && (mapped[i+1] == 0xd8))
       {
         soi = i;
         break;
       }
     }
   }
+
+	//GST_WARNING_OBJECT(dragon, "%d\t%f", size, ms() - start);
+
+  if (!soi)
+	  GST_WARNING_OBJECT(dragon, "NO SOI");
+
   return soi;
 }
 
@@ -155,63 +143,87 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
   if (GST_CLOCK_TIME_IS_VALID (stream_time))
     gst_object_sync_values (GST_OBJECT (dragon), stream_time);
 
-  //GST_OBJECT_LOCK (dragon);
-  //GST_OBJECT_UNLOCK (dragon);
-
   //GstMemory* mem = gst_buffer_get_memory(buf, 0);
   //printf("\t\t\tsize: %zu\n", mem->size);
 
   //GstV4l2Memory* mem = gst_mini_object_get_qdata(GST_MINI_OBJECT(buf), g_quark_from_static_string ("GstV4l2Memory"));
 
   //printf("\t\t\tsize: %zu\n", gst_buffer_get_size(buf));
+  //GST_WARNING_OBJECT(dragon, "\t\t\tdts: %llu, pts: %llu\n", buf->dts, buf->pts);
 
-  //GstMapInfo info;
-  //if (!gst_buffer_map(buf, &info, GST_MAP_READ))
-  //  return GST_FLOW_ERROR;
-
-  //printf("\t\t\tsize: %zu\n", info.size);
-
-  //gst_buffer_unmap(buf, &info);
-
-  GstMapInfo info;
-  if (!gst_buffer_map(buf, &info, GST_MAP_READ))
-    return GST_FLOW_ERROR;
-
-  guint8* mapped = info.data;
+  //static double start = 0;
+  //GST_WARNING_OBJECT(dragon, "%f", ms() - start);
+  //start = ms();
 
   int size = gst_buffer_get_size(buf);
+  const int expected_size = gst_doubledragon_expected_size (dragon, size);
+  GST_DEBUG_OBJECT(dragon, "\t\t\tsize: %d\texpected_size: %d\n", size, expected_size);
 
-  int soi = gst_doubledragon_find_soi(dragon, mapped, size);
-    //GST_WARNING_OBJECT(dragon, "\t\t\tdts: %llu, pts: %llu\n", buf->dts, buf->pts);
-
-  gst_buffer_unmap(buf, &info);
-
-  if (soi)
+  if (size > (3*expected_size)/2)
   {
-	  GST_WARNING_OBJECT(dragon, "Found SOI at %d", soi);
+    //GST_WARNING_OBJECT(dragon, "duplicate frame with size: %d", size);
 
-    GstMemory* mem = gst_buffer_get_memory(buf, 0);
-    GST_DEBUG_OBJECT(dragon, "\t\t\tis_dmabuf: %d, dma_fd: %i\n", gst_is_dmabuf_memory (mem), gst_dmabuf_memory_get_fd (mem));
-    GST_WARNING_OBJECT(dragon, "\t\t\tdts: %llu, pts: %llu\n", buf->dts, buf->pts);
+    GstMapInfo info;
+    if (!gst_buffer_map(buf, &info, GST_MAP_READ))
+      return GST_FLOW_ERROR;
 
-    gst_memory_resize(mem, soi, size - soi);
+    const guint8* mapped = info.data;
 
-    GstMemory * dup_mem = gst_memory_share (mem, 0, soi);
+    int soi = gst_doubledragon_find_soi(dragon, mapped, size);
 
-    GstBuffer* dup = gst_buffer_new();
+    if (soi)
+    {
+	    GST_WARNING_OBJECT(dragon, "Found SOI at %d", soi);
 
-	  gst_buffer_remove_all_memory(dup);
-    gst_buffer_append_memory(dup, dup_mem);
+      //FILE *jpg = fopen("/data/out.jpg", "wb");
+      //fwrite(mapped, size, 1, jpg);
+      //fclose(jpg);
 
-    dup->pts = buf->pts;
-    dup->dts = buf->dts;
+      GstMemory* mem = gst_buffer_get_memory(buf, 0);
+      //GST_DEBUG_OBJECT(dragon, "\t\t\tis_dmabuf: %d, dma_fd: %i\n", gst_is_dmabuf_memory (mem), gst_dmabuf_memory_get_fd (mem));
+      //GST_WARNING_OBJECT(dragon, "\t\t\tdts: %llu, pts: %llu\n", buf->dts, buf->pts);
 
-    buf->pts += 33333333;
+      //gst_memory_resize(mem, soi, size - soi);
 
-    gst_pad_push(basetransform->srcpad, dup);
+      GstMemory * dup_mem = gst_memory_share (mem, soi, size - soi);
+
+      GstBuffer* dup = gst_buffer_new();
+
+	    gst_buffer_remove_all_memory(dup);
+      gst_buffer_append_memory(dup, dup_mem);
+
+      dup->pts = buf->pts;
+      dup->dts = buf->dts;
+
+      const GstClockTime diff = 33333333;
+      if (buf->pts > diff)
+        buf->pts -= diff;
+
+      dragon->pending = dup;
+    }
+
+    gst_buffer_unmap(buf, &info);
+  }
+  return GST_FLOW_OK;
+}
+
+static GstFlowReturn
+gst_doubledragon_generate_output (GstBaseTransform * basetransform, GstBuffer ** outbuf)
+{
+  GstDoubledragon *dragon = GST_DOUBLEDRAGON (basetransform);
+  GST_OBJECT_LOCK (dragon);
+
+  const GstFlowReturn ret = dragon->default_generate_output(basetransform, outbuf);
+
+  if (dragon->pending)
+  {
+    gst_pad_push(basetransform->srcpad, dragon->pending);
+    dragon->pending = NULL;
   }
 
-  return GST_FLOW_OK;
+  GST_OBJECT_UNLOCK (dragon);
+
+  return ret;
 }
 
 static void
@@ -262,7 +274,7 @@ gst_doubledragon_class_init (GstDoubledragonClass * klass)
   gobject_class->set_property = gst_doubledragon_set_property;
   gobject_class->get_property = gst_doubledragon_get_property;
 
-	GST_DEBUG_CATEGORY_INIT(imx_v4l2_buffer_pool_debug, "doubledragon", 0, "Fix for double buffer bug in sonix c1/c1-pro cameras");
+  GST_DEBUG_CATEGORY_INIT(imx_v4l2_buffer_pool_debug, "doubledragon", 0, "Fix for double buffer bug in sonix c1/c1-pro cameras");
 
 
   gst_element_class_set_static_metadata (gstelement_class, "Doubledragon",
@@ -281,6 +293,11 @@ gst_doubledragon_class_init (GstDoubledragonClass * klass)
 static void
 gst_doubledragon_init (GstDoubledragon * dragon)
 {
+  dragon->pending = NULL;
+
+  GstBaseTransformClass *basetransform_class = GST_BASE_TRANSFORM_GET_CLASS(&dragon->basetransform);
+  dragon->default_generate_output = basetransform_class->generate_output;
+  basetransform_class->generate_output = GST_DEBUG_FUNCPTR (gst_doubledragon_generate_output);
 }
 
 static gboolean

@@ -30,7 +30,9 @@ struct _GstDoubledragon
   GstBaseTransform basetransform;
 
   /* < private > */
+  GstBuffer * pending;
 
+  GstFlowReturn (*default_generate_output) (GstBaseTransform*, GstBuffer**);
 };
 
 struct _GstDoubledragonClass
