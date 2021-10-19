@@ -187,28 +187,19 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
 
       GstMemory * dup_mem = gst_memory_share(mem, soi, size - soi);
 
-      // In the default v4l2src, we need to copy the quark to avoid a leak.
+      // We need to copy the quark to avoid a leak.
       // This uses the quark defined in https://gitlab.freedesktop.org/gstreamer/gst-plugins-good/-/blob/1.18.4/sys/v4l2/gstv4l2allocator.c#L934
-      #ifndef DOUBLEDRAGON_IMXV4L2VIDEOSRC
       GQuark v4l2_mem = gst_mini_object_get_qdata(GST_MINI_OBJECT(mem), g_quark_from_static_string ("GstV4l2Memory"));
       gst_mini_object_set_qdata(GST_MINI_OBJECT(mem), g_quark_from_static_string ("GstV4l2Memory"), v4l2_mem, (GDestroyNotify) gst_memory_unref);
-      #endif
 
       GstBuffer* dup = gst_buffer_new();
 
 	    gst_buffer_remove_all_memory(dup);
       gst_buffer_append_memory(dup, dup_mem);
 
-      dup->pts = buf->pts;
+      dup->pts = buf->pts + buf->duration;
       dup->dts = buf->dts;
       dup->duration = buf->duration;
-
-      // We need to either subtract the duration from the newest buffer, or add it to the oldest, depending on the gstreamer implementation.
-      #ifdef DOUBLEDRAGON_IMXV4L2VIDEOSRC
-      buf->pts = buf->pts > buf->duration ? buf->pts - buf->duration : 0;
-      #else
-      dup->pts += buf->duration;
-      #endif
 
       dragon->pending = dup;
     }
