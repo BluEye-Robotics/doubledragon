@@ -105,7 +105,7 @@ gst_doubledragon_find_soi (GstDoubledragon * dragon, const guint8 * mapped, cons
 
   if ((mapped[0] == 0xff) && (mapped[1] == 0xd8)) // sanity check for invalid jpg buffers
   {
-    for (int i = (5*size)/11; i < (6 * size)/11; ++i) // we search in a limited interval around expected_size
+    for (int i = (3*size)/8; i < (3 * size)/4; ++i) // we search in a limited interval around expected_size
     {
       if ((mapped[i] == 0xff) && (mapped[i+1] == 0xd8))
       {
