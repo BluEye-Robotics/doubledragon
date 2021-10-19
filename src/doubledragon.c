@@ -3,10 +3,8 @@
  *
  * Doubledragon is a texttransform that uses memory mapping for vpu buffers
  *
- *  Jpeg frames get delayed when they collide with Iframes. They combine with the next frames and they
+ *  Jpeg buffer get delayed when they collide with h264 Iframes. They combine with the next buffer and they
  *  make a jpeg with twice the size of what's usual.
- *
- *  Assuming a bitrate of 150 Mb  we get jpegs of about 250 kb and duplicate frames of around 500 kb.
  *
  * <refsect2>
  * <title>Example launch line</title>
@@ -105,7 +103,7 @@ gst_doubledragon_find_soi (GstDoubledragon * dragon, const guint8 * mapped, cons
 
   GST_DEBUG_OBJECT(dragon, "SOI: %x\t%x\n", mapped[0], mapped[1]);
 
-  if ((mapped[0] == 0xff) && (mapped[1] == 0xd8)) // sanity check for invalid jpg frames
+  if ((mapped[0] == 0xff) && (mapped[1] == 0xd8)) // sanity check for invalid jpg buffers
   {
     for (int i = (5*size)/11; i < (6 * size)/11; ++i) // we search in a limited interval around expected_size
     {
@@ -149,7 +147,7 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
   //GstV4l2Memory* mem = gst_mini_object_get_qdata(GST_MINI_OBJECT(buf), g_quark_from_static_string ("GstV4l2Memory"));
 
   //printf("\t\t\tsize: %zu\n", gst_buffer_get_size(buf));
-  //GST_WARNING_OBJECT(dragon, "\t\t\tdts: %llu, pts: %llu\n", buf->dts, buf->pts);
+  GST_DEBUG_OBJECT(dragon, "\t\t\tdts: %llu, pts: %llu", buf->dts, buf->pts);
 
   //static double start = 0;
   //GST_WARNING_OBJECT(dragon, "%f", ms() - start);
@@ -165,11 +163,11 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
 
   int size = gst_buffer_get_size(buf);
   const int expected_size = gst_doubledragon_expected_size (dragon, size);
-  GST_DEBUG_OBJECT(dragon, "\t\t\tsize: %d\texpected_size: %d\n", size, expected_size);
+  GST_DEBUG_OBJECT(dragon, "\t\t\tsize: %d\texpected_size: %d", size, expected_size);
 
   if (size > (3*expected_size)/2)
   {
-    //GST_WARNING_OBJECT(dragon, "duplicate frame with size: %d", size);
+    GST_WARNING_OBJECT(dragon, "duplicate buffer with size: %d", size);
 
     GstMapInfo info;
     if (!gst_buffer_map(buf, &info, GST_MAP_READ))
@@ -188,8 +186,6 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
       //fclose(jpg);
 
       GstMemory* mem = gst_buffer_get_memory(buf, 0);
-      GST_DEBUG_OBJECT(dragon, "\t\t\tis_dmabuf: %d, dma_fd: %i\n", gst_is_dmabuf_memory (mem), gst_dmabuf_memory_get_fd (mem));
-      GST_DEBUG_OBJECT(dragon, "\t\t\tdts: %llu, pts: %llu\n", buf->dts, buf->pts);
 
       GstMemory * dup_mem = gst_memory_share (mem, soi, size - soi);
 
@@ -200,12 +196,23 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
 
       dup->pts = buf->pts;
       dup->dts = buf->dts;
-
-      const GstClockTime diff = 33333333;
-      if (buf->pts > diff)
-        buf->pts -= diff;
+      dup->duration = buf->duration;
 
       dragon->pending = dup;
+
+      // We need to either subtract the duration from the newest buffer, or add it to the oldest, depending on the gstreamer implementation.
+      // This behaviour is controlled through DOUBLE_DRAGON_SUBTRACT_TS.
+      // To find out which one to choose, compare the timestamps of the double buffer with the one before or after.
+      // If the one before is two durations before the double buffer, then we need to substract one duration from the oldest buffer in the double buffer, and vice versa.
+      #ifdef DOUBLE_DRAGON_SUBTRACT_TS
+      buf->pts = buf->pts > buf->duration ? buf->pts - buf->duration : 0;
+      #else
+      dup->pts += buf->duration;
+      #endif
+    }
+    else
+    {
+	    GST_WARNING_OBJECT(dragon, "Found no SOI");
     }
 
     gst_buffer_unmap(buf, &info);
