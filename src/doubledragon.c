@@ -162,7 +162,7 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
 
   if (size > (3*expected_size)/2)
   {
-    GST_WARNING_OBJECT(dragon, "duplicate buffer with size: %d", size);
+    GST_DEBUG_OBJECT(dragon, "duplicate buffer with size: %d", size);
 
     GstMapInfo info;
     if (!gst_buffer_map(buf, &info, GST_MAP_READ))
@@ -176,7 +176,7 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
 
     if (soi)
     {
-	    GST_WARNING_OBJECT(dragon, "Found SOI at %d", soi);
+	    GST_DEBUG_OBJECT(dragon, "Found SOI at %d", soi);
 
       // save jpg (make sure buffer is mapped)
       //FILE *jpg = fopen("/data/out.jpg", "wb");
@@ -205,7 +205,7 @@ gst_doubledragon_transform_ip (GstBaseTransform * basetransform, GstBuffer * buf
     }
     else
     {
-	    GST_WARNING_OBJECT(dragon, "Found no SOI");
+	    GST_DEBUG_OBJECT(dragon, "Found no SOI");
     }
   }
 
