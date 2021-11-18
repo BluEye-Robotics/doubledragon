@@ -28,7 +28,7 @@ Then we send the pending buffer immediately when we get a new buffer.
 To test the element on the imx6:
 
 ```
-GST_DEBUG=doubledragon:9 gst-launch-1.0 -v -e v4l2src device=/dev/video0 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! queue max-size-bytes=0 max-size-time=1000000000 max-size-buffers=0 ! imxvpudec_jpeg !  video/x-raw,format=I420 ! queue max-size-bytes=0 max-size-time=1000000000 max-size-buffers=0 ! imxvpuenc_h264 bitrate=14000 ! queue max-size-bytes=0 max-size-time=1000000000 max-size-buffers=0 ! h264parse  ! mp4mux ! filesink location=/videos/out.mp4
+GST_DEBUG=doubledragon:9 gst-launch-1.0 -v -e v4l2src device=/dev/video0 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! queue max-size-bytes=0 max-size-time=1000000000 max-size-buffers=0 ! doubledragon ! imxvpudec_jpeg !  video/x-raw,format=I420 ! queue max-size-bytes=0 max-size-time=1000000000 max-size-buffers=0 ! imxvpuenc_h264 bitrate=14000 ! queue max-size-bytes=0 max-size-time=1000000000 max-size-buffers=0 ! h264parse  ! mp4mux ! filesink location=/videos/out.mp4
 ```
 
 To trigger the bug, along with the fix, you also need to run the following pipeline simultaneously with the first one:
