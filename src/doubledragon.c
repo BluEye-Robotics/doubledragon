@@ -185,7 +185,7 @@ gst_doubledragon_transform_ip(GstBaseTransform *basetransform, GstBuffer *buf) {
       // We need to copy the quark to avoid a leak.
       // This uses the quark defined in
       // https://gitlab.freedesktop.org/gstreamer/gst-plugins-good/-/blob/1.18.4/sys/v4l2/gstv4l2allocator.c#L934
-      GQuark v4l2_mem = gst_mini_object_get_qdata(
+      gpointer v4l2_mem = gst_mini_object_get_qdata(
           GST_MINI_OBJECT(mem), g_quark_from_static_string("GstV4l2Memory"));
       gst_mini_object_set_qdata(GST_MINI_OBJECT(mem),
                                 g_quark_from_static_string("GstV4l2Memory"),
